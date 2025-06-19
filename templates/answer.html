@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Question & Answer</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 40px;
+      }
+      .error {
+        color: red;
+      }
+      .container {
+        max-width: 800px;
+        margin: auto;
+      }
+      .btn {
+        display: inline-block;
+        margin-top: 20px;
+        padding: 8px 16px;
+        background: #007bff;
+        color: #fff;
+        text-decoration: none;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>回答結果</h1>
+      {% if error %}
+      <p class="error">{{ error }}</p>
+      {% else %}
+      <p><strong>問題：</strong>{{ question }}</p>
+      <hr />
+      <p><strong>回答：</strong></p>
+      <p>{{ answer | nl2br }}</p>
+      {% endif %}
+
+      <a class="btn" href="/">« 回到首頁</a>
+    </div>
+  </body>
+</html>
