@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body>
+    <h2>星等分佈</h2>
+    <canvas id="ratingChart"></canvas>
+    <script>
+      // 從後端拿到的 rating_counts
+      const ratingCounts = {{ rating_counts | tojson }};
+      const stars = Object.keys(ratingCounts);      // ["5","4","3","2","1"]
+      const counts = stars.map(s => ratingCounts[s]);
+
+      new Chart(document.getElementById('ratingChart').getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: stars,
+          datasets: [{
+            label: '評論數量',
+            data: counts
+          }]
+        },
+        options: {
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    </script>
+
+    <h2>關鍵字統計</h2>
+    <canvas id="kwChart"></canvas>
+    <script>
+      const stats = {{ stats | tojson }};
+      const labels = stats.map(r=>r.keyword);
+      const data = stats.map(r=>r.count);
+      new Chart(document.getElementById('kwChart').getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{ label: '出現次數', data: data }]
+        }
+      });
+    </script>
+
+    <h2>原始評論</h2>
+    <ul>
+      {% for r in reviews %}
+      <li><strong>{{r.author}} ({{r.rating}}星)：</strong>{{r.text}}</li>
+      {% endfor %}
+    </ul>
+  </body>
+</html>

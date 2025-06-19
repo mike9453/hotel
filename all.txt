@@ -1,0 +1,20 @@
+
+my_flask_app/
+│
+├── app.py                  # Flask 主程式
+├── config.py               # API 金鑰、資料庫等設定
+├── requirements.txt        # 相依套件
+│
+├── modules/
+│   ├── scraper_api.py      # 用 Google Maps Places API 取評論
+│   ├── scraper_selenium.py # 用 Selenium 爬 Google Maps 頁面（不推薦，示範用）
+│   ├── analysis.py         # 關鍵字擷取與統計
+│   └── db.py               # 資料庫操作封裝
+│
+├── templates/
+│   ├── index.html          # 查詢表單
+│   └── results.html        # 結果呈現（文字、圖表）
+│
+└── static/
+    ├── css/
+    └── js/                 # Chart.js 等前端套件
