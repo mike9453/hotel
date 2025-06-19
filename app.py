@@ -1,55 +1,93 @@
 import os
 import json
 import time
+import threading
 import openai
+import tiktoken
 from openai import OpenAIError
 from flask import Flask, render_template, request
 from modules.scraper_selenium import fetch_google_maps_reviews
 from modules.analysis import keyword_stats
 import re
 from collections import Counter
-from datetime import datetime, date
+from datetime import datetime
 
 app = Flask(__name__)
 
-# 初始化 OpenAI
+# 初始化 OpenAI API key
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-def extract_place_id(url):
-    """
-    從 Google Maps URL 中抽取 place_id
-    支援格式如：https://www.google.com/maps/place/<place_id>/...
-    """
-    m = re.search(r"/place/([^/?]+)", url)
-    return m.group(1) if m else None
+# 全域鎖與時間戳，用來做 client 端限速
+lock = threading.Lock()
+_last_chat_time = 0.0
+# gpt-3.5-turbo 是 3 RPM → 每分鐘 3 次呼叫 → MIN_CHAT_INTERVAL = 60 / 3 = 20 秒
+MIN_CHAT_INTERVAL = 20.0  
+
+# 初始化 tiktoken
+ENC = tiktoken.encoding_for_model("gpt-3.5-turbo")
+MAX_TOKENS_PER_CHUNK = 1000  # 每個 chunk 最多大約 1000 tokens
+
+def throttle_chat():
+    """確保每次呼叫 ChatCompletion.create 間隔 >= MIN_CHAT_INTERVAL"""
+    global _last_chat_time
+    with lock:
+        now = time.time()
+        elapsed = now - _last_chat_time
+        if elapsed < MIN_CHAT_INTERVAL:
+            time.sleep(MIN_CHAT_INTERVAL - elapsed)
+        _last_chat_time = time.time()
 
 def safe_create(**kwargs):
     """
-    使用 exponential backoff 重試機制呼叫 OpenAI chat completions，
-    遇到 429（RateLimitError）才重試，其它錯誤則直接冒泡。
+    在呼叫 chat.completions.create 前做限速，
+    遇到 429 時指數 backoff 共重試 5 次。
     """
-    max_retries = 3
+    max_retries = 5
     for i in range(max_retries):
+        throttle_chat()
         try:
             return openai.chat.completions.create(**kwargs)
         except OpenAIError as e:
             msg = str(e)
-            # 只對 429 做重試
             if "429" not in msg:
                 raise
-            wait = 2 ** i  # 1s, 2s, 4s
-            print(f"⚠️ RateLimitError, retry #{i+1} after {wait}s…")
+            wait = 2 ** i
+            if hasattr(e, "http_headers"):
+                ra = e.http_headers.get("retry-after")
+                if ra and ra.isdigit():
+                    wait = int(ra)
+            print(f"⚠️ RateLimitError, retry #{i+1} in {wait}s …")
             time.sleep(wait)
-    # 最後一次不捕，讓最終錯誤被外層處理
+    throttle_chat()
     return openai.chat.completions.create(**kwargs)
+
+def extract_place_id(url):
+    m = re.search(r"/place/([^/?]+)", url)
+    return m.group(1) if m else None
+
+def chunk_by_tokens(texts):
+    """
+    根據 tiktoken 把多個文本切成多個 token 數量 <= MAX_TOKENS_PER_CHUNK 的 chunk
+    """
+    chunks = []
+    current, count = [], 0
+    for txt in texts:
+        tlen = len(ENC.encode(txt))
+        if count + tlen > MAX_TOKENS_PER_CHUNK:
+            chunks.append(current)
+            current, count = [], 0
+        current.append(txt)
+        count += tlen
+    if current:
+        chunks.append(current)
+    return chunks
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    # 產生可選年份：從今年往前推 20 年
     current_year = datetime.now().year
     years = list(range(current_year, current_year - 21, -1))
-
     error = None
+
     if request.method == "POST":
         place_url  = request.form.get("place_url", "").strip()
         start_year = request.form.get("start_year")
@@ -63,7 +101,6 @@ def index():
                 start_year = int(start_year)
                 end_year   = int(end_year)
 
-                # 1. 爬取評論，並過濾年份
                 reviews = fetch_google_maps_reviews(
                     place_url,
                     scroll_times=15,
@@ -73,12 +110,10 @@ def index():
                     debug=True
                 )
 
-                # 2. 提取文字，做關鍵字統計
                 texts = [r['text'] for r in reviews]
                 stats_df = keyword_stats(texts, top_n=20)
                 stats = stats_df.to_dict(orient="records")
 
-                # —— 星等分佈統計 ——
                 ratings = [r['rating'] for r in reviews if r.get('rating') is not None]
                 cnt = Counter(ratings)
                 rating_counts = {star: cnt.get(star, 0) for star in [5,4,3,2,1]}
@@ -100,50 +135,58 @@ def index():
 
 @app.route("/ask", methods=["POST"])
 def ask():
-    # （可選）印出 key 與使用量，方便 debug
-    print(">>> OPENAI_API_KEY:", os.getenv("OPENAI_API_KEY"))
-    print(">>> openai.api_key      :", openai.api_key)
-    today = date.today().isoformat()
-    try:
-        usage = openai.usage.records.list(start_date=today, end_date=today)
-        print("📊 今日使用紀錄：", usage.data)
-    except Exception as e:
-        print("❌ 查 usage 失敗：", e)
-
-    # 從隱藏欄位取出 reviews JSON
     reviews = json.loads(request.form['reviews_json'])
     user_question = request.form['user_question'].strip()
 
-    # 準備 prompt
-    review_texts = [f"{r['author']} ({r['rating']}★)：『{r['text']}』" for r in reviews]
-    context = "\n".join(review_texts)
-    prompt = (
-        "以下是 Google Maps 店家的多筆消費者評論：\n"
-        f"{context}\n\n"
-        f"請根據上述評論，回答使用者的問題：{user_question}"
-    )
+    # 將所有 review 文本切成 token-based chunks
+    texts = [r["text"] for r in reviews]
+    chunks = chunk_by_tokens(texts)
 
-    # 呼叫 OpenAI（透過 safe_create 自動重試）
-    try:
+    # 對每個 chunk 做單獨摘要
+    summaries = []
+    for chunk in chunks:
+        chunk_prompt = (
+            "請將以下消費者評論濃縮成不超過200字的摘要：\n\n"
+            + "\n".join(chunk)
+        )
         resp = safe_create(
             model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "你是一個擅長分析消費者評論的助手。"},
-                {"role": "user",   "content": prompt}
-            ],
-            temperature=0.5,
-            max_tokens=500,
+            messages=[{"role":"user","content":chunk_prompt}],
+            max_tokens=200,
+            temperature=0.3
         )
-        answer = resp.choices[0].message.content
-        return render_template("answer.html", question=user_question, answer=answer)
+        summaries.append(resp.choices[0].message.content)
 
-    except OpenAIError as e:
-        msg = str(e)
-        if "429" in msg or "insufficient_quota" in msg:
-            error = "系統忙碌或呼叫頻率過高，請稍後再試。"
-        else:
-            error = f"OpenAI 錯誤：{msg}"
-        return render_template("answer.html", question=user_question, answer=None, error=error)
+    # 合併所有 chunk 摘要，再做最終摘要
+    combined_prompt = (
+        "以下是多段消費者評論摘要，請綜合並濃縮成一個不超過300字的最終摘要：\n\n"
+        + "\n".join(summaries)
+    )
+    final_resp = safe_create(
+        model="gpt-3.5-turbo",
+        messages=[{"role":"user","content":combined_prompt}],
+        max_tokens=300,
+        temperature=0.3
+    )
+    final_summary = final_resp.choices[0].message.content
+
+    # 最後以 final_summary + user_question 取得回答
+    answer_prompt = (
+        f"以下是整理後的評論摘要：\n{final_summary}\n\n"
+        f"請根據上述摘要回答使用者問題：{user_question}"
+    )
+    answer_resp = safe_create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role":"system","content":"你是一個擅長分析消費者評論的助手。"},
+            {"role":"user","content":answer_prompt}
+        ],
+        max_tokens=500,
+        temperature=0.5
+    )
+    answer = answer_resp.choices[0].message.content
+
+    return render_template("answer.html", question=user_question, answer=answer)
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
