@@ -63,3 +63,4 @@ debug_output.html
 # 鎖檔（如果你不想上傳）
 Pipfile.lock
 poetry.lock
+.env
