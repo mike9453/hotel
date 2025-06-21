@@ -4,83 +4,26 @@ import time
 import threading
 import openai
 import tiktoken
-from openai import OpenAIError
 from flask import Flask, render_template, request
 from modules.scraper_selenium import fetch_google_maps_reviews
 from modules.analysis import keyword_stats
 import re
 from collections import Counter
 from datetime import datetime
+from markupsafe import escape, Markup
+from dotenv import load_dotenv
+from openai import OpenAI, OpenAIError   # 注意這裡改成從 openai import OpenAI
 
+load_dotenv()
 app = Flask(__name__)
 
-# 初始化 OpenAI API key
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# 在程式一開始就建立好 OpenRouter client
+router_client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.getenv("OPENROUTER_API_KEY")
+)
 
-# 全域鎖與時間戳，用來做 client 端限速
-lock = threading.Lock()
-_last_chat_time = 0.0
-# gpt-3.5-turbo 是 3 RPM → 每分鐘 3 次呼叫 → MIN_CHAT_INTERVAL = 60 / 3 = 20 秒
-MIN_CHAT_INTERVAL = 20.0  
 
-# 初始化 tiktoken
-ENC = tiktoken.encoding_for_model("gpt-3.5-turbo")
-MAX_TOKENS_PER_CHUNK = 1000  # 每個 chunk 最多大約 1000 tokens
-
-def throttle_chat():
-    """確保每次呼叫 ChatCompletion.create 間隔 >= MIN_CHAT_INTERVAL"""
-    global _last_chat_time
-    with lock:
-        now = time.time()
-        elapsed = now - _last_chat_time
-        if elapsed < MIN_CHAT_INTERVAL:
-            time.sleep(MIN_CHAT_INTERVAL - elapsed)
-        _last_chat_time = time.time()
-
-def safe_create(**kwargs):
-    """
-    在呼叫 chat.completions.create 前做限速，
-    遇到 429 時指數 backoff 共重試 5 次。
-    """
-    max_retries = 5
-    for i in range(max_retries):
-        throttle_chat()
-        try:
-            return openai.chat.completions.create(**kwargs)
-        except OpenAIError as e:
-            msg = str(e)
-            if "429" not in msg:
-                raise
-            wait = 2 ** i
-            if hasattr(e, "http_headers"):
-                ra = e.http_headers.get("retry-after")
-                if ra and ra.isdigit():
-                    wait = int(ra)
-            print(f"⚠️ RateLimitError, retry #{i+1} in {wait}s …")
-            time.sleep(wait)
-    throttle_chat()
-    return openai.chat.completions.create(**kwargs)
-
-def extract_place_id(url):
-    m = re.search(r"/place/([^/?]+)", url)
-    return m.group(1) if m else None
-
-def chunk_by_tokens(texts):
-    """
-    根據 tiktoken 把多個文本切成多個 token 數量 <= MAX_TOKENS_PER_CHUNK 的 chunk
-    """
-    chunks = []
-    current, count = [], 0
-    for txt in texts:
-        tlen = len(ENC.encode(txt))
-        if count + tlen > MAX_TOKENS_PER_CHUNK:
-            chunks.append(current)
-            current, count = [], 0
-        current.append(txt)
-        count += tlen
-    if current:
-        chunks.append(current)
-    return chunks
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -133,60 +76,73 @@ def index():
 
     return render_template("index.html", years=years, error=error)
 
+def extract_place_id(url):
+    m = re.search(r"/place/([^/?]+)", url)
+    return m.group(1) if m else None
+
+@app.template_filter('nl2br')
+def nl2br(s):
+    # 先把文字 escape，再把換行換成 <br>
+    escaped = escape(s)
+    return Markup(escaped.replace('\n', '<br>\n'))
+
 @app.route("/ask", methods=["POST"])
 def ask():
-    reviews = json.loads(request.form['reviews_json'])
-    user_question = request.form['user_question'].strip()
+    error = None
+    try:
+        reviews = json.loads(request.form["reviews_json"])
+        question = request.form["user_question"].strip()
+        if not question:
+            raise ValueError("請輸入問題。")
 
-    # 將所有 review 文本切成 token-based chunks
-    texts = [r["text"] for r in reviews]
-    chunks = chunk_by_tokens(texts)
+        # 合併所有評論文字
+        texts = [r.get("text","") for r in reviews]
+        content = "\n\n".join(texts)
 
-    # 對每個 chunk 做單獨摘要
-    summaries = []
-    for chunk in chunks:
-        chunk_prompt = (
-            "請將以下消費者評論濃縮成不超過200字的摘要：\n\n"
-            + "\n".join(chunk)
+        messages = [
+            {"role": "system", "content": "從現在開始，請全部使用繁體中文回答所有問題。"},
+            {"role": "system", "content": "你是一個專業的店家評論分析助理。"},
+            {"role": "user",   "content": f"以下是所有評論：\n\n{content}"},
+            {"role": "user",   "content": question}
+        ]
+
+        # 多給一些 max_tokens，避免回答被截斷
+        resp = router_client.chat.completions.create(
+            model="deepseek/deepseek-r1-0528",
+            messages=messages,
+            temperature=0.7,
+            max_tokens=2000,    # 原本 800 提升到 1500
+            extra_headers={},
+            extra_body={}
         )
-        resp = safe_create(
-            model="gpt-3.5-turbo",
-            messages=[{"role":"user","content":chunk_prompt}],
-            max_tokens=200,
-            temperature=0.3
-        )
-        summaries.append(resp.choices[0].message.content)
+        answer_raw = resp.choices[0].message.content.strip()
 
-    # 合併所有 chunk 摘要，再做最終摘要
-    combined_prompt = (
-        "以下是多段消費者評論摘要，請綜合並濃縮成一個不超過300字的最終摘要：\n\n"
-        + "\n".join(summaries)
-    )
-    final_resp = safe_create(
-        model="gpt-3.5-turbo",
-        messages=[{"role":"user","content":combined_prompt}],
-        max_tokens=300,
-        temperature=0.3
-    )
-    final_summary = final_resp.choices[0].message.content
+        # 把 AI 回傳中的 <br> 標籤換成換行
+        answer = re.sub(r'<br\s*/?>', '\n', answer_raw)
 
-    # 最後以 final_summary + user_question 取得回答
-    answer_prompt = (
-        f"以下是整理後的評論摘要：\n{final_summary}\n\n"
-        f"請根據上述摘要回答使用者問題：{user_question}"
-    )
-    answer_resp = safe_create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role":"system","content":"你是一個擅長分析消費者評論的助手。"},
-            {"role":"user","content":answer_prompt}
-        ],
-        max_tokens=500,
-        temperature=0.5
-    )
-    answer = answer_resp.choices[0].message.content
+        # 如果模型真的跑到 token 上限，finish_reason 會是 "length"
+        if resp.choices[0].finish_reason == "length":
+            answer += "\n\n（⚠️ 回答長度已達模型上限，回答已中斷。）"
 
-    return render_template("answer.html", question=user_question, answer=answer)
+    except OpenAIError as e:
+        error = f"AI 呼叫失敗：{e}"
+        question = request.form.get("user_question","")
+        answer = None
+    except Exception as e:
+        error = str(e)
+        question = request.form.get("user_question","")
+        answer = None
+
+    return render_template(
+        "answer.html",
+        error=error,
+        question=question,
+        answer=answer,
+        reviews_json=request.form["reviews_json"]
+    )
+
+
+
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
