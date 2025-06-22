@@ -16,6 +16,7 @@ COPY . /app
 # 5. 安裝 Python 套件
 RUN pip install --no-cache-dir -r requirements.txt
 
+
 # 6. 設環境變數，讓 selenium 找到 chromium
 ENV CHROME_BIN=/usr/bin/chromium
 # 若需要其他 .env 變數，也可以在這裡列

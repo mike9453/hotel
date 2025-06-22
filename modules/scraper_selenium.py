@@ -1,6 +1,6 @@
 # modules/scraper_selenium.py
 
-import time, re, requests, datetime
+import time, re, requests, datetime, os, shutil
 from dateutil.relativedelta import relativedelta
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -11,10 +11,13 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 
-def init_driver(headless=False):
+def init_driver(headless=True):
     opts = Options()
-    if headless:
-        opts.add_argument("--headless")
+
+    # 使用新版 headless 模式
+    opts.add_argument("--headless=new")
+
+    # 無頭模式下 container 常用 flag
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
@@ -23,10 +26,21 @@ def init_driver(headless=False):
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
     )
-    driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()),
-        options=opts
-    )
+
+    # 遠端除錯埠，避免 DevToolsActivePort 錯誤
+    opts.add_argument("--remote-debugging-port=9222")
+
+    # 動態定位 chromium binary
+    chrome_path = os.getenv("CHROME_BIN",
+                    shutil.which("chromium") or shutil.which("chromium-browser"))
+    if chrome_path:
+        opts.binary_location = chrome_path
+
+    # 定位 chromedriver 可執行檔
+    driver_path = shutil.which("chromedriver") or "/usr/bin/chromedriver"
+    service = Service(driver_path)
+
+    driver = webdriver.Chrome(service=service, options=opts)
     driver.set_window_size(1920, 1080)
     return driver
 
