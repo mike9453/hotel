@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>分析結果</title>
+    <!-- Bootstrap CSS -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      .ai-answer {
+        white-space: pre-wrap;
+        line-height: 1.6;
+        max-height: 50vh;
+        overflow-y: auto;
+        padding: 1rem;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 0.25rem;
+      }
+    </style>
+  </head>
+  <body class="bg-light">
+    <div class="container py-5">
+      <!-- 原本的回答區 -->
+      <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white">
+          <h4 class="mb-0">回答結果</h4>
+        </div>
+        <div class="card-body">
+          {% if error %}
+          <div class="alert alert-danger">{{ error }}</div>
+          {% else %}
+          <div class="mb-4">
+            <h5 class="fw-bold">問題：</h5>
+            <p>{{ question }}</p>
+          </div>
+          <div class="mb-4">
+            <h5 class="fw-bold">回答：</h5>
+            <div class="ai-answer">{{ answer }}</div>
+          </div>
+          {% endif %}
+          <a href="/" class="btn btn-outline-secondary">« 返回首頁</a>
+        </div>
+      </div>
+
+      <!-- 新增：繼續提問區塊 -->
+      <div class="card shadow-sm mt-4">
+        <div class="card-header bg-info text-white">
+          <h5 class="mb-0">繼續提問</h5>
+        </div>
+        <div class="card-body">
+          <form method="post" action="/ask" class="needs-validation" novalidate>
+            <!-- 把 reviews_json 帶回去，讓 ask() 知道上下文 -->
+            <textarea name="reviews_json" hidden>{{ reviews_json }}</textarea>
+
+            <div class="mb-3">
+              <label for="followup_question" class="form-label"
+                >你的新問題</label
+              >
+              <input
+                type="text"
+                class="form-control"
+                id="followup_question"
+                name="user_question"
+                placeholder="例如：請幫我再分析這些評論的情感傾向"
+                required
+              />
+              <div class="invalid-feedback">請輸入你的問題。</div>
+            </div>
+            <button type="submit" class="btn btn-primary">送出問題</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bootstrap JS + 表單驗證 -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      (function () {
+        "use strict";
+        var forms = document.querySelectorAll(".needs-validation");
+        Array.prototype.slice.call(forms).forEach(function (form) {
+          form.addEventListener(
+            "submit",
+            function (event) {
+              if (!form.checkValidity()) {
+                event.preventDefault();
+                event.stopPropagation();
+              }
+              form.classList.add("was-validated");
+            },
+            false
+          );
+        });
+      })();
+    </script>
+  </body>
+</html>

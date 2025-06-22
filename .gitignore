@@ -1,0 +1,66 @@
+
+.env
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+env/
+venv/
+ENV/
+.envvenv/
+.Pipfile.lock
+
+# PyInstaller
+#  如果你用過 pyinstaller 打包 exe，也可以忽略：
+__pycache__/
+*.manifest
+*.spec
+
+# VS Code settings
+.vscode/
+
+# IDEs
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS generated
+.DS_Store
+Thumbs.db
+
+# 日誌與快照
+*.log
+*.sqlite3
+
+# 暫存的測試或 Debug 輸出
+debug_*.html
+selenium_debug.html
+debug_output.html
+
+# 鎖檔（如果你不想上傳）
+Pipfile.lock
+poetry.lock
+.env
