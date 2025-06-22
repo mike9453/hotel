@@ -122,7 +122,7 @@ def ask():
 
         # 如果模型真的跑到 token 上限，finish_reason 會是 "length"
         if resp.choices[0].finish_reason == "length":
-            answer += "\n\n（⚠️ 回答長度已達模型上限，回答已中斷。）"
+            answer += "\n\n（⚠️ 回答長度達模型上限，回答已中斷。）"
 
     except OpenAIError as e:
         error = f"AI 呼叫失敗：{e}"
