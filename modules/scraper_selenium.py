@@ -98,7 +98,7 @@ def fetch_google_maps_reviews(
             raise ValueError("請選擇相差一年的區間 (end_year − start_year 必須等於 1)！")
 
     url = expand_url(url)
-    driver = init_driver(headless=False)
+    driver = init_driver(headless=True)
     wait = WebDriverWait(driver, 20)
 
     try:
