@@ -18,10 +18,18 @@ def init_driver(headless=True):
     opts.add_argument("--headless=new")
 
     # 無頭模式下 container 常用 flag
+
+    opts.add_argument("--single-process")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
     opts.add_argument("--disable-extensions")
+    opts.add_argument("--disable-background-networking")
+    opts.add_argument("--disable-default-apps")
+    opts.add_argument("--disable-popup-blocking")
+    opts.add_argument("--disable-translate")
+
+
     opts.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
