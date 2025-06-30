@@ -50,6 +50,14 @@
    
 3. 確認已安裝 Google Chrome，`webdriver_manager` 會自動處理 chromedriver。
 
+   在linux安裝google瀏覽器
+
+   wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+   sudo apt install -y ./google-chrome-stable_current_amd64.deb
+   google-chrome --version
+ 
+
+
 ---
 
 ## 使用說明

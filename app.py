@@ -36,9 +36,8 @@ def index():
         start_year = request.form.get("start_year")
         end_year   = request.form.get("end_year")
 
-        place_id = extract_place_id(place_url)
-        if not place_id:
-            error = "無法從網址抽出 place_id，請確認格式"
+        if not place_url.startswith("http"):
+            error = "請輸入正確的 Google Maps 網址"
         else:
             try:
                 start_year = int(start_year)
@@ -145,4 +144,4 @@ def ask():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=True, host="0.0.0.0", port=5001)

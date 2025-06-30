@@ -12,49 +12,50 @@ from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 
 def init_driver(headless=False):
-    opts = Options()
-    if headless:
-        opts.add_argument("--headless")
-    opts.add_argument("--no-sandbox")
-    opts.add_argument("--disable-dev-shm-usage")
-    opts.add_argument("--disable-gpu")
-    opts.add_argument("--disable-extensions")
+    opts = Options() #Options 是 Selenium 專門用來設定瀏覽器啟動行為的物件
+    if headless:  #headless=True
+        opts.add_argument("--headless") #以無頁面操作
+    opts.add_argument("--no-sandbox")   #停用 Chrome 的沙盒安全機制
+    opts.add_argument("--disable-dev-shm-usage")  #禁用 /dev/shm 共享內存的使用，改用磁碟來存放臨時數據，避免崩潰。
+    opts.add_argument("--disable-gpu")  #禁用 GPU 硬體加速
+    opts.add_argument("--disable-extensions") #禁用所有瀏覽器擴充功能（Extensions）
     opts.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
-    )
+    )#自訂的 User-Agent 字串，看起來像是「正常人在用的瀏覽器」，避免被網站識別出來是機器人或爬蟲
     driver = webdriver.Chrome(
         service=Service(ChromeDriverManager().install()),
         options=opts
-    )
+    )#用 webdriver_manager 自動處理 ChromeDriver
     driver.set_window_size(1920, 1080)
     return driver
 
+# 展開網址，處理短網址、跳轉
+# 用 GET 請求拿到最終跳轉後的網址
 def expand_url(url):
     try:
-        resp = requests.head(url, allow_redirects=True, timeout=5)
+        resp = requests.get(url, allow_redirects=True, timeout=5) #requests 是 Python 第三方套件，用來操作 HTTP 請求 的高階封裝工具
         return resp.url
-    except:
+    except Exception as e:
+        print(f"[Debug] 展開網址失敗：{e}")
         return url
 
+# 解析評論中的時間文字，轉換為實際日期
 def parse_time_txt(time_txt: str) -> datetime.date:
     """把 'X 年前'/'X 個月前'/'X 週前'/'X 天前' 轉成實際日期"""
     now = datetime.datetime.now()
-    m = re.match(r"(\d+)\s*年前", time_txt)
+    m = re.match(r"(\d+)\s*年前", time_txt)  # \d+ 代表至少 1 個數字，\s* 代表 0 個或多個空白
     if m:
         return (now - relativedelta(years=int(m.group(1)))).date()
-    m = re.match(r"(\d+)\s*(?:個)?月前", time_txt)
+    m = re.match(r"(\d+)\s*個月前", time_txt) 
     if m:
         return (now - relativedelta(months=int(m.group(1)))).date()
-    m = re.match(r"(\d+)\s*(?:週|周)前", time_txt)
+    m = re.match(r"(\d+)\s*週前", time_txt)
     if m:
         return (now - datetime.timedelta(weeks=int(m.group(1)))).date()
     m = re.match(r"(\d+)\s*天前", time_txt)
     if m:
         return (now - datetime.timedelta(days=int(m.group(1)))).date()
-    m = re.search(r"(\d{4})", time_txt)
-    if m:
-        return datetime.date(int(m.group(1)), 1, 1)
     return now.date()
 
 def fetch_google_maps_reviews(
