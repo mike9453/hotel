@@ -60,7 +60,7 @@ def parse_time_txt(time_txt: str) -> datetime.date:
 
 def fetch_google_maps_reviews(
     url: str,  #Google Maps 地圖連結
-    scroll_times: int = 20, #最多滾動幾次（避免無限滾動卡死）
+    scroll_times: int = 100, #最多滾動幾次（避免無限滾動卡死）
     scroll_pause: float = 1.5, #每次滾動後停頓多久（單位：秒）
     start_year: int = None,
     end_year:   int = None,
@@ -121,27 +121,26 @@ def fetch_google_maps_reviews(
 
         
 
-        # (5) 滾動 + 點更多評論，最多執行 scroll_times 次
+        # (5) 滾動 + 點更多評論=，最多執行 scroll_times 次
         prev_count = 0
         for _ in range(scroll_times):
-            driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", scrollable)
+            # 滾動到最底部
+            driver.execute_script(
+                "arguments[0].scrollTop = arguments[0].scrollHeight",
+                scrollable
+            )
             time.sleep(scroll_pause)
-            # 嘗試點「Load more」
-            try:
-                more = scrollable.find_element(By.XPATH,
-                    ".//button[contains(., 'Load more') or contains(., '顯示更多評論')]"
-                )
-                more.click()
-                time.sleep(scroll_pause)
-            except:
-                pass
 
+            # 重新計算評論數量
             cards = scrollable.find_elements(By.CSS_SELECTOR, "[data-review-id]")
             curr_count = len(cards)
+
+            # 如果數量沒變，代表沒有新評論，提早跳出
             if curr_count == prev_count:
                 break
             prev_count = curr_count
 
+        # 取得最終頁面原始碼
         html = driver.page_source
         if debug:
             with open("debug_final.html", "w", encoding="utf-8") as f:
