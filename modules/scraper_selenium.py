@@ -59,12 +59,12 @@ def parse_time_txt(time_txt: str) -> datetime.date:
     return now.date()
 
 def fetch_google_maps_reviews(
-    url: str,
-    scroll_times: int = 20,
-    scroll_pause: float = 1.5,
+    url: str,  #Google Maps 地圖連結
+    scroll_times: int = 20, #最多滾動幾次（避免無限滾動卡死）
+    scroll_pause: float = 1.5, #每次滾動後停頓多久（單位：秒）
     start_year: int = None,
     end_year:   int = None,
-    debug: bool = True
+    debug: bool = True #是否儲存最後網頁原始碼做除錯用途
 ):
     """
     爬取 Google Maps 評論，最多捲動 scroll_times 次，也會點「更多評論」直到看不到新評論。
@@ -82,11 +82,11 @@ def fetch_google_maps_reviews(
 
     try:
         driver.get(url)
-        # (1) 點第一筆搜尋結果
+        # (1)  如果網頁是搜尋結果，非已經選定店家，自動點擊搜尋到的第一個店家
         try:
             first = wait.until(EC.element_to_be_clickable(
                 (By.CSS_SELECTOR, "div.section-result, div[data-result-index]")
-            ))
+            ))#等待用 CSS 選擇器定位畫面上的元素可點擊。 
             first.click()
             time.sleep(2)
         except:
@@ -95,18 +95,18 @@ def fetch_google_maps_reviews(
         # (2) 點「評論」Tab
         try:
             tab = wait.until(EC.element_to_be_clickable((
-                By.XPATH,
+                By.XPATH, #用 XPath 語法來定位元素。
                 "//button[@role='tab' and (contains(., '評論') or contains(., 'Reviews'))]"
-            )))
+            ))) #XPath寫法，全域搜尋 <button> 必須有 role="tab"， . 代表「當前節點的所有內容」contains() 判斷內容有沒有包含「評論」兩個字。
             tab.click()
             time.sleep(2)
         except:
             pass
 
-        # (3) 等待至少一則評論
+        # (3) 等待至少一則評論，data-review-id評論 CSS 選擇器定位評論區塊屬性
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "[data-review-id]")))
 
-        # (4) 找可捲動容器
+        # (4) 找可捲動容器，內部 JavaScript，定義一個叫 getScrollParent 的函數，用來往上找可以滾動的父層。
         scrollable = driver.execute_script("""
             const c = document.querySelector('[data-review-id]');
             function getScrollParent(n){
@@ -116,6 +116,10 @@ def fetch_google_maps_reviews(
             }
             return getScrollParent(c);
         """)
+        #scrollable 最後會是：第一則評論的外層或祖先層中，可以垂直滾動的容器元素。
+        #後續程式才能針對這個元素操作 .scrollTop，模擬滑鼠捲動效果，讓評論區不斷載入新內容。
+
+        
 
         # (5) 滾動 + 點更多評論，最多執行 scroll_times 次
         prev_count = 0
